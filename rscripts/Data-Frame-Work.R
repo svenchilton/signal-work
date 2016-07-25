@@ -511,9 +511,9 @@ mod_col_names(dfa)
 get_edge = function(mat, dir, clockwise=FALSE) {
   if (!is.matrix(mat)) stop('mat must be a matrix')
   if ((!is.double(dir) & 
-       !is.double(dir)) | 
+       !is.integer(dir)) | 
       (0 > dir) | (dir > 3)) {
-    stop('dir must be a double integer between 0 and 3, inclusive')
+    stop('dir must be a double or integer between 0 and 3, inclusive')
   }
   if (!clockwise) {
     # dir = c(0,1,2,3) <==> (down,right,up,left)
@@ -535,9 +535,9 @@ get_edge = function(mat, dir, clockwise=FALSE) {
 slice_edge = function(mat, dir, clockwise=FALSE) {
   if (!is.matrix(mat)) stop('mat must be a matrix')
   if ((!is.double(dir) & 
-       !is.double(dir)) | 
+       !is.integer(dir)) | 
       (0 > dir) | (dir > 3)) {
-    stop('dir must be a double integer between 0 and 3, inclusive')
+    stop('dir must be a double or integer between 0 and 3, inclusive')
   }
   if (!clockwise) {
     # dir = c(0,1,2,3) <==> (down,right,up,left)
