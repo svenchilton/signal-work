@@ -1,0 +1,314 @@
+---
+title: "Factor-Analysis"
+author: "Sven Chilton and Tegan McCaslin"
+date: "July 20, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r something}
+library('psych')
+library('dplyr')
+library('ggplot2')
+library('corrplot')
+library('DAAG')
+library('pROC')
+library('GPArotation')
+
+# Sigmoid function
+sigmoid = function(x) 1./(1.+exp(-x))
+
+# Make a factors data frame with 3 columns of uniformly distributed 
+# observations (mean = 0, sd = 1)
+# Set the seed for reproducibility
+set.seed(2); factors = data.frame(X=rnorm(100), Y=rnorm(100), Z=rnorm(100))
+
+noisyIndicators = function(feature, k, correlation) {
+  feature_name = names(feature)
+  noisy_list = vector('list', k)
+  noisy_names = rep(NA,k)
+  for (i in 1:k) {
+    err = rnorm(length(feature))*sqrt(1 - correlation^2)
+    noisy_list[[i]] = correlation*feature + err
+    noisy_names[i] = paste0(feature_name,i)
+  }
+  noisy_df = data.frame(noisy_list)
+  colnames(noisy_df) = noisy_names
+  return(noisy_df)
+}
+
+noisyX4 = noisyIndicators(factors['X'], 4, 0.9)
+noisyY3 = noisyIndicators(factors['Y'], 3, 0.6)
+noisies = cbind(noisyX4, noisyY3)
+
+corrplot(as.matrix(noisies), is.corr = FALSE)
+
+
+# Run PCA on the features and plot the correlations between the 
+# principal components and the noisies data frame. Also, plot the 
+# correlations between the principal components and the factors 
+# data frame.
+
+factors_p = prcomp(factors)
+
+# cbind() the principal components of factors to both the factors 
+# an noisies data frames, then call corrplot(cor()) on the 
+# resulting data frames
+noisies_and_pcs = cbind(noisies, factors_p$x)
+factors_and_pcs = cbind(factors, factors_p$x)
+
+corrplot(cor(noisies_and_pcs))
+corrplot(cor(factors_and_pcs))
+
+# Factor analysis
+factors_f = fa(factors, nfactors=2, rotate='varimax')
+
+# cbind() the principal components of factors to both the factors 
+# an noisies data frames, then call corrplot(cor()) on the 
+# resulting data frames
+noisies_and_fs = cbind(noisies, factors_f$scores)
+factors_and_fs = cbind(factors, factors_f$scores)
+
+corrplot(cor(noisies_and_fs))
+corrplot(cor(factors_and_fs))
+
+
+# Generate 50 new variables 
+new_vars = do.call(cbind, 
+                   rep(factors[,'X']*runif(1) + 
+                         factors[,'Y']*runif(2) + 
+                         factors[,'Z']*runif(3) + 
+                         0.5*rnorm(nrow(factors)), 
+                       50))
+
+new_vars = vector('list', 50)
+new_var_names = rep(NA, 50)
+set.seed(1)
+for (i in 1:length(new_vars)) {
+  new_vars[[i]] = 
+    factors[,'X']*runif(1) + factors[,'Y']*runif(1) + factors[,'Z']*runif(1) + 0.5*rnorm(nrow(factors))
+  new_var_names[i] = paste0('Var',i)
+}
+new_vars = data.frame(new_vars)
+colnames(new_vars) = new_var_names
+
+# Run PCA on the new variables
+new_vars_p = prcomp(new_vars)
+
+# cbind() the principal components of new_vars to new_vars, 
+# then call corrplot(cor()) on the resulting data frame
+new_vars_and_pcs = cbind(new_vars, new_vars_p$x)
+corrplot(cor(new_vars_and_pcs))
+corrplot(cor(new_vars_and_pcs[,1:53]))
+
+# Factor analysis
+new_vars_f = fa(new_vars, nfactors=3, rotate='varimax')
+
+# cbind() the principal components of factors to both the factors 
+# an noisies data frames, then call corrplot(cor()) on the 
+# resulting data frames
+new_vars_and_fs = cbind(new_vars, new_vars_f$scores)
+corrplot(cor(new_vars_and_fs))
+
+# Add a W column to factors
+factors[['W']] = 0.5*factors[['X']] + factors[['Y']]
+
+cor(factors[['Y']], factors[['W']])
+
+noisyX10 = noisyIndicators(factors['X'], 10, 0.8)
+noisyW4  = noisyIndicators(factors['W'], 4,  0.8)
+noisies2 = cbind(noisyX10, noisyW4)
+
+corrplot(cor(noisies2))
+
+noisies2_f1 = fa(new_vars, nfactors=2, rotate='varimax')
+noisies2_f2 = fa(new_vars, nfactors=2, rotate='oblimin')
+noisies2_and_fs1 = cbind(noisies2, noisies2_f1$scores)
+noisies2_and_fs2 = cbind(noisies2, noisies2_f2$scores)
+corrplot(cor(noisies2_and_fs1))
+corrplot(cor(noisies2_and_fs2))
+
+
+# Speed dating
+sd = read.csv('/Users/svenchilton/GitHub/signal-data-science/R-curriculum/datasets/speed-dating/speeddating-aggregated.csv')
+activities = dplyr::select(sd, sports:yoga)
+
+activities_f1_var = fa(activities, nfactors=1, rotate='varimax')
+activities_f1_obl = fa(activities, nfactors=1, rotate='oblimin')
+corrplot(activities_f1_var$loadings, is.corr = FALSE)
+corrplot(activities_f1_obl$loadings, is.corr = FALSE)
+
+activities_f2_var = fa(activities, nfactors=2, rotate='varimax')
+activities_f2_obl = fa(activities, nfactors=2, rotate='oblimin')
+corrplot(activities_f2_var$loadings, is.corr = FALSE)
+corrplot(activities_f2_obl$loadings, is.corr = FALSE)
+
+activities_f3_var = fa(activities, nfactors=3, rotate='varimax')
+activities_f3_obl = fa(activities, nfactors=3, rotate='oblimin')
+corrplot(activities_f3_var$loadings, is.corr = FALSE)
+corrplot(activities_f3_obl$loadings, is.corr = FALSE)
+
+activities_f4_var = fa(activities, nfactors=4, rotate='varimax')
+activities_f4_obl = fa(activities, nfactors=4, rotate='oblimin')
+corrplot(activities_f4_var$loadings, is.corr = FALSE)
+corrplot(activities_f4_obl$loadings, is.corr = FALSE)
+
+
+# Big 5 schtuph
+# Heh, the folks who made this data set gave it a .csvextension, 
+# but it's really a .tsv.  Tricksy.
+big5 = read.table('~/Documents/BIG5/data.csv', sep = '\t', header = TRUE)
+
+# Extract the features columns
+big5_features = dplyr::select(big5, E1:O10)
+
+# It turns out that the gender column isn't binary.  
+# For modeling purposes later, let's extract the gender and questions 
+# columns from big5, then remove any rows where gender == 0 or 
+# gender == 3
+# Then subtract 1 from the resulting gender column
+clean_big5 = dplyr::select(big5, gender, E1:O10)
+clean_big5 = clean_big5[clean_big5[['gender']] == 1 | clean_big5[['gender']] == 2,]
+clean_big5[['gender']] = clean_big5[['gender']] - 1
+
+# PCA
+big5_features_p = prcomp(big5_features)
+# FA
+big5_features_f_var = fa(big5_features, nfactors=5, rotate='varimax')
+big5_features_f_obl = fa(big5_features, nfactors=5, rotate='oblimin')
+
+corrplot(big5_features_p$rotation, is.corr=FALSE)
+corrplot(big5_features_f_var$loadings, is.corr = FALSE)
+corrplot(big5_features_f_obl$loadings, is.corr = FALSE)
+
+# Now let's use glm() to predict gender from the big5 features 
+# and the 5 factors
+questions_model = glm(gender ~ ., family='binomial', clean_big5)
+pred_gender_from_q_log_odds = predict(questions_model, clean_big5)
+pred_gender_from_q = as.numeric(pred_gender_from_q_log_odds >= 0)
+pred_gender_from_q_sigmoid = sigmoid(pred_gender_from_q_log_odds)
+min(tail(summary(questions_model)$coefficients, -1)[,1])
+auc(clean_big5[['gender']], pred_gender_from_q_sigmoid)[1]
+
+clean_big5_f5_var = fa(clean_big5, nfactors=5, rotate='varimax')
+clean_big5_f5_obl = fa(clean_big5, nfactors=5, rotate='oblimin')
+
+# Make new data frames containing the cleaned gender column 
+# and the 5 factors from each of the factor analyses above
+clean_big5_f5_var_df = cbind(clean_big5['gender'], clean_big5_f5_var$scores)
+clean_big5_f5_obl_df = cbind(clean_big5['gender'], clean_big5_f5_obl$scores)
+
+f5_var_model = glm(gender ~ ., family='binomial', clean_big5_f5_var_df)
+pred_gender_from_f5_var_log_odds = predict(f5_var_model, clean_big5_f5_var_df)
+pred_gender_from_f5_var = as.numeric(pred_gender_from_f5_var_log_odds >= 0)
+pred_gender_from_f5_var_sigmoid = sigmoid(pred_gender_from_f5_var_log_odds)
+summary(f5_var_model)$coefficients
+auc(clean_big5[['gender']], pred_gender_from_f5_var_sigmoid)[1]
+
+f5_obl_model = glm(gender ~ ., family='binomial', clean_big5_f5_obl_df)
+pred_gender_from_f5_obl_log_odds = predict(f5_obl_model, clean_big5_f5_obl_df)
+pred_gender_from_f5_obl = as.numeric(pred_gender_from_f5_obl_log_odds >= 0)
+pred_gender_from_f5_obl_sigmoid = sigmoid(pred_gender_from_f5_obl_log_odds)
+summary(f5_obl_model)$coefficients
+auc(clean_big5[['gender']], pred_gender_from_f5_obl_sigmoid)[1]
+
+
+# See if we can extract subfactors
+extraversion = dplyr::select(big5, E1:E10)
+neuroticism  = dplyr::select(big5, N1:N10)
+
+extraversion_f_var = fa(extraversion, nfactors=2, rotate='varimax')
+corrplot(extraversion_f_var$loadings, is.corr = FALSE)
+
+subfactor = function(df, f) {
+  subdf = dplyr::select(df, contains(f))
+  subdf_f_var = fa(subdf, nfactors=2, rotate='varimax')
+  subdf_f_obl = fa(subdf, nfactors=2, rotate='oblimin')
+  return(list(var_model=subdf_f_var, obl_model=subdf_f_obl))
+}
+
+subfactor_list = subfactor(big5_features, 'E')
+
+factor_letters = c('E', 'N', 'A', 'C', 'O')
+
+all_subfactors = function(df, fs) {
+  all_subfactors_list = vector('list', length(fs))
+  names(all_subfactors_list) = fs
+  for (i in 1:length(fs)) {
+    all_subfactors_list[[i]] = subfactor(df, fs[i])
+  }
+  return(all_subfactors_list)
+}
+
+all_subfactors_list = all_subfactors(big5_features, factor_letters)
+
+subfactor_plots = function(all_sf_list) {
+  num_fac = length(all_sf_list)
+  plot_list = vector('list', num_fac)
+  names(plot_list) = names(all_sf_list)
+  for (i in 1:num_fac) {
+    var_mod = all_sf_list[[i]][['var_model']]
+    obl_mod = all_sf_list[[i]][['obl_model']]
+    var_plot = corrplot(var_mod$loadings, is.corr = FALSE)
+    obl_plot = corrplot(obl_mod$loadings, is.corr = FALSE)
+    plot_list[[i]] = list(var_plot = var_plot, obl_plot = obl_plot)
+  }
+  return(plot_list)
+}
+
+subfactor_plot_list = subfactor_plots(all_subfactors_list)
+
+corrplot(subfactor_plot_list$E$obl_plot, is.corr = FALSE)
+
+var_mod = all_subfactors_list[[1]][['var_model']]
+
+
+
+
+# NEVER MIND.  I'll implement this on my own time.
+## Compute the correlations between the principal components 
+## and each column of the noisies data frame
+
+#corrs = function(row_df, col_df) {
+#  num_rows = ncol(row_df)
+#  num_cols = ncol(col_df)
+#  corr_list = vector('list',num_cols)
+#  names(corr_list) = colnames(col_df)
+#  for (j in 3:num_cols) {
+#    
+#  }
+#}
+
+
+
+
+
+
+
+
+
+
+
+dummy_list = vector('list', 4)
+attributes(dummy_list)$names
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

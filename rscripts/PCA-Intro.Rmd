@@ -1,0 +1,296 @@
+---
+title: "PCA-Intro.R"
+author: "Sven Chilton and Rafael Lacerda"
+date: "July 19, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r psych pca}
+# Load the appropriate packages
+library('psych')
+library('dplyr')
+library('ggplot2')
+library('corrplot')
+library('DAAG')
+library('pROC')
+
+# Function for calculating the (non-normalized) RMSE between x and y
+rmse = function(x,y) {
+  # Make sure that x and y have the same length
+  if (length(x) != length(y)) stop('x and y must have the same length')
+  return(sqrt(mean((x-y)^2)))
+}
+
+# Sigmoid function
+sigmoid = function(x) 1./(1.+exp(-x))
+
+# Begin filtering the msq data frame
+df = msq
+
+# Extract the desired features
+features = dplyr::select(df, active:scornful)
+
+# Compute the number of NAs in each column
+nas_per_column = colSums(is.na(features))
+num_rows = nrow(features)
+frac_nas_per_column = nas_per_column/num_rows
+
+# Filter out the features columns containing at least 10% NAs
+features = features[,(frac_nas_per_column < 0.1)]
+
+# Compute the number of NAs in each row
+nas_per_row = rowSums(is.na(features))
+num_cols = ncol(features)
+frac_nas_per_row = nas_per_row/num_cols
+
+# Filter out the rows of the features df containing at least 10% NAs
+features = features[(frac_nas_per_row < 0.1),]
+
+# Fill any remaining NAs with column means
+# There should be an easier way to do this...
+for(i in 1:ncol(features)) {
+  if (length(features[is.na(features[,i]), i]) > 0) {
+    features[is.na(features[,i]), i] = mean(features[,i], na.rm=TRUE)
+  }
+}
+
+# Run the PCA on the features data frame
+p = prcomp(features, scale.=TRUE)
+
+vec = c(-11,21,31,-41,-51)
+vec[order(abs(vec), decreasing = TRUE)]
+
+# Return the top k coefficients relating the original features 
+# to the nth principal component, ordered by absolute value
+# p is the full output of a prcomp() call
+top = function(p, n, k) {
+  vec = p$rotation[,n]
+  return(vec[order(abs(vec), decreasing = TRUE)][1:k])
+}
+
+# Plot all the loadings of the first 10 principal components
+corrplot(p$rotation[,1:10], is.corr=FALSE)
+
+# Make a data frame with 10 columns, corresponding to the first 10 
+# principal components, and 67 rows, corresponding to each of the 
+# original features.  Initialize it with zeros, and only overwrite 
+# them column by column with the top() function.
+loading_df = data.frame(matrix(0, ncol=10, nrow=ncol(features)))
+colnames(loading_df) = colnames(p$rotation)[1:10]
+rownames(loading_df) = colnames(features)
+
+# Loop over the columns
+for (j in 1:ncol(loading_df)) {
+  topj = top(p,j,10)
+  loading_df[names(topj),j] = topj
+}
+
+# Examine the correlations between the features and the top 10 
+# principal components visually
+corrplot(as.matrix(loading_df), is.corr=FALSE)
+
+# Rename the first 10 principal components from looking at corrplot() 
+# and top()
+top_10_PCs = c('Verve', 'Stress', 'Tranquility', 'Energy', 'Fear', 
+               'Sadness', 'Shock', 'Astonishment', 'Shame', 'Meh')
+
+
+# Plot the eigenvalues of the matrix resulting from the singular 
+# value decomposition embedded in the prcomp() function
+g = ggplot() + 
+  geom_point(aes(x=1:length(p$sdev), y=p$sdev), color='blue') + 
+  ylab('# deviations') + 
+  xlab('Principal Component')
+g
+
+# Cross-validation with cv.lm from DAAG package
+
+# Extract the Extraversion and Neuroticism columns from df
+# and remove the rows we filtered out of the features df
+targets = df[rownames(features),c('Extraversion','Neuroticism')]
+
+# It turns out that there are some NA values in the columns of the 
+# targets df.  Let's replace them with column means.
+for(i in 1:ncol(targets)) {
+  if (length(targets[is.na(targets[,i]), i]) > 0) {
+    targets[is.na(targets[,i]), i] = mean(targets[,i], na.rm=TRUE)
+  }
+}
+
+
+# Bind the targets columns to the principal components df
+pcs  = data.frame(p$x)
+pcdf = cbind(pcs, targets)
+
+# Function which uses the first kth principal components to predict 
+# Extraversion and Neuroticism, using a simple, unregularized linear 
+# model
+# In this case, target is a named column of targets rather than a 
+# column name
+predict_from_k_pcs = function(k, pcs, target, nfolds=10) {
+  pcdf = cbind(select(pcs,1:k), target)
+  target_name = names(target)
+  lm_arg = paste(target_name,"~ .") # Default separation (' ')
+  form_lm_arg = lm(lm_arg, pcdf)
+  model = cv.lm(data = pcdf, 
+                form.lm = formula(form_lm_arg), 
+                m = nfolds)
+  return(sqrt(attr(model, 'ms')))
+}
+
+# Initialize vectors which will contain the RMSE values obtained 
+# from running a 10-fold cross-validated linear regression using 
+# k principal components, where k %in% 1:ncol(pcs) (in this case 
+# 67) for each target variable
+num_pcs = ncol(pcs)
+extr_rmses = rep(NA, num_pcs)
+neur_rmses = rep(NA, num_pcs)
+
+# Populate each of these vectors
+for (k in 1:num_pcs) {
+  extr_rmses[k] = predict_from_k_pcs(k, pcs, targets['Extraversion'])
+  neur_rmses[k] = predict_from_k_pcs(k, pcs, targets['Neuroticism'])
+}
+
+# Now let's build a data frame from these results
+k_pcs_rmses = data.frame(k=1:num_pcs, 
+                         Extraversion_RMSE=extr_rmses, 
+                         Neuroticism_RMSE=neur_rmses)
+
+# Let's plot the evolution of the RMSE values for both targets
+# against k
+g2 = ggplot() + 
+  geom_point(data = k_pcs_rmses, aes(x=k, y=Extraversion_RMSE), color='red',  shape=2, size=4) + 
+  geom_point(data = k_pcs_rmses, aes(x=k, y=Neuroticism_RMSE),  color='blue', shape='x', size=4) + 
+  xlab('Number of principal components included') + ylab('RMSE')
+g2
+
+
+# Load the aggregated speed dating data frame
+sd = read.csv('/Users/svenchilton/GitHub/signal-data-science/R-curriculum/datasets/speed-dating/speeddating-aggregated.csv')
+#rowSums(is.na(sd))
+
+# Drop all rows containing NA values
+sd = na.omit(sd)
+
+# Extract the features
+sdfeatures = select(sd, sports:yoga)
+
+# Extract the targets
+sdtargets = select(sd, gender, race, career_c)
+
+# Combine the features and targets into one data frame
+sdft = cbind(sdfeatures, sdtargets)
+
+# Run the PCA on the sdfeatures data frame
+sdp = prcomp(sdfeatures, scale.=TRUE)
+
+# cbind() the principal component values from above to the targets 
+# to make a new df
+sdpcs = data.frame(sdp$x)
+sdpct = cbind(sdpcs, sdtargets)
+
+# Plot all the loadings
+corrplot(sdp$rotation, is.corr=FALSE)
+
+# Plot the eigenvalues of the matrix resulting from the singular 
+# value decomposition embedded in the prcomp() function
+g3 = ggplot() + 
+  geom_point(aes(x=1:length(sdp$sdev), y=sdp$sdev), color='blue') + 
+  ylab('# deviations') + 
+  xlab('Principal Component')
+g3
+
+# Function for predicting a given binary target from the first k 
+# principal components
+# k = number of principal components to include
+# pct = data frame consisting of both the features and all of the 
+# possible targets, with the features listed first
+# target_name = name of binary target to predict
+# lo = lower value of binary target
+# hi = higher value of binary target
+##nfolds = number of cross-validation folds
+# Outputs a 2-element list containing the model (obtained from glm) 
+# and the AUC
+predict_binary_from_k_pcs = function(k, pct, target_name, lo=0, hi=1) {
+  # Extract the first k principal components and the target column 
+  # corresponding to target_name
+  pcdf = cbind(select(pct,1:k), pct[target_name])
+  # Now let's filter out by target_name and ensure that its now 
+  # binary values are 0 and 1
+  pcdf = pcdf[(pcdf[target_name] == lo) | (pcdf[target_name] == hi),]
+  #pcdf[target_name] = (pcdf[target_name] - lo) / (hi-lo)
+  pcdf[target_name] = as.numeric(pcdf[target_name] == hi)
+  # Predict target from principal components
+  glm_arg1 = paste(target_name,"~ .") # Default separation (' ')
+  model = glm(glm_arg1, family='binomial', data=pcdf)
+  predicted_target_log_odds = predict(model, pcdf)
+  predicted_target = as.numeric(predicted_target_log_odds >= 0)
+  predicted_target_sigmoid = sigmoid(predicted_target_log_odds)
+  # Calculate the AUC
+  target_auc = auc(pcdf[[target_name]], predicted_target_sigmoid)[1]
+  # Return the list
+  return(list(auc=target_auc, model=model))
+}
+
+
+predict_binary_from_all_pcs = function(pcs, targets) {
+  num_targets = ncol(targets)
+  num_pcs = ncol(pcs)
+  pct = cbind(pcs, targets)
+  return_list = vector('list', num_targets)
+  names(return_list) = colnames(targets)
+  for (t in 1:num_targets) {
+    target_name = colnames(targets)[t]
+    sublist = vector('list', num_pcs)
+    for (k in 1:num_pcs) {
+      lo = min(pct[target_name])
+      hi = max(pct[target_name])
+      sublist[[k]] = predict_binary_from_k_pcs(k, pct, target_name, lo, hi)
+      }
+    return_list[[t]] = sublist
+  }
+  return(return_list)
+}
+
+all_binary_predictions = predict_binary_from_all_pcs(sdpcs, sdtargets)
+
+extract_aucs = function(bin_pred_list, target_names) {
+  auc_list = vector('list', length(target_names))
+  names(auc_list) = target_names
+  for (target_name in target_names) {
+    num_pcs = length(bin_pred_list[[target_name]])
+    col = rep(NA, num_pcs)
+    for (k in 1:num_pcs) {
+      col[k] = bin_pred_list[[target_name]][[k]]$auc
+    }
+    auc_list[[target_name]] = col
+  }
+  return(data.frame(auc_list))
+}
+
+auc_df = extract_aucs(all_binary_predictions, colnames(sdtargets))
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
