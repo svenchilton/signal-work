@@ -1,13 +1,14 @@
 # Sven Chilton and Ivan Dimitrov
 # Signal Data Science Cohort 3
 
-setwd('/Users/svenchilton/GitHub/signal-data-science/R-curriculum/assignments/2-basic-topics/dimensionality-reduction/recommender-systems/')
+setwd('~/GitHub/signal-work/rscripts')
 
 library('dplyr')
 library('softImpute')
 library('DAAG')
 library('corrplot')
 library('pROC')
+library('dummies')
 
 # Function for calculating the (non-normalized) RMSE between x and y
 rmse = function(x,y) {
@@ -17,7 +18,7 @@ rmse = function(x,y) {
 }
 
 # Read in the ratings data
-ratings = read.csv('~/Documents/ml-1m/ratings.dat', sep = ':', header = FALSE)
+ratings = read.csv('../data/ratings.dat', sep = ':', header = FALSE)
 
 # Remove the empty columns
 ratings = ratings[,!is.na(colSums(ratings))]
@@ -245,7 +246,10 @@ results = cbind(results, asym=asym_vec)
 
 
 # Read in the movies data
-movies = read.csv('~/Documents/ml-1m/movies-copy.dat', sep = '\t', header = FALSE)
+# Since R's read functions can't handle multi-character separators, I 
+# used emacs to change all of the "::" separators in the .dat file to 
+# tabs
+movies = read.csv('../data/movies.dat', sep = '\t', header = FALSE)
 
 # Rename the columns
 colnames(movies) = c('movieID','title','genres')
@@ -276,7 +280,7 @@ movies = movies[movies$movieID %in% unique(ratings$movieID),]
 
 # Extract the "factors" matrix v resulting from the "best" (measured 
 # by RMSE) soft-SVD on which softImpute() is based.  Then extract 
-# only the rowscorresponding to movieIDs which are present in the 
+# only the rows corresponding to movieIDs which are present in the 
 # ratings df and bind the resulting matrix to the movies df. 
 factors = best_svd$v
 factors = factors[1:nrow(factors) %in% unique(ratings$movieID),]
@@ -298,6 +302,327 @@ drama_model_cv = CVbinary(drama_model)
 roc(movies$Drama,drama_model_cv$cvhat, plot=TRUE)
 
 auc(movies$Drama,drama_model_cv$cvhat)
+
+# Generate a new df with columns for: 
+# 1) movie titles
+# 2) whether or not the film is a drama
+# 3) the probability that said film is a drama, according to our model
+# Arrange the rows from greatest to smalles probability
+drama_df = data.frame(list(title=movies$title, 
+                           Drama=movies$Drama, 
+                           Drama_Probability=drama_model_cv$cvhat))
+drama_df = drama_df[order(drama_df$Drama_Probability, decreasing = TRUE),]
+
+# Let's compute the precision and recall for our drama model
+drama_actual_pos = sum(drama_df$Drama == 1)
+drama_predicted_pos = sum(drama_df$Drama_Probability >= 0.5)
+drama_true_pos = sum((drama_df$Drama == 1) & (drama_df$Drama_Probability >= 0.5))
+drama_precision = drama_true_pos/drama_predicted_pos
+drama_recall = drama_true_pos/drama_actual_pos
+drama_f_score = 2*drama_precision*drama_recall/(drama_precision + drama_recall)
+
+# OK, the drama model isn't so great
+
+# Let's repeat this analysis for 3 other genres
+# Let's say Comedy, Musical, and Sci-Fi
+comedy_model = glm(Comedy ~ ., family='binomial',data=dplyr::select(movies, Comedy, f1:f30))
+comedy_model_cv = CVbinary(comedy_model)
+comedy_df = data.frame(list(title=movies$title, 
+                           Comedy=movies$Comedy, 
+                           Comedy_Probability=comedy_model_cv$cvhat))
+comedy_df = comedy_df[order(comedy_df$Comedy_Probability, decreasing = TRUE),]
+comedy_actual_pos = sum(comedy_df$Comedy == 1)
+comedy_predicted_pos = sum(comedy_df$Comedy_Probability >= 0.5)
+comedy_true_pos = sum((comedy_df$Comedy == 1) & (comedy_df$Comedy_Probability >= 0.5))
+comedy_precision = comedy_true_pos/comedy_predicted_pos
+comedy_recall = comedy_true_pos/comedy_actual_pos
+comedy_f_score = 2*comedy_precision*comedy_recall/(comedy_precision + comedy_recall)
+
+# The comedy model has decent precision, but lousy recall
+
+
+musical_model = glm(Musical ~ ., family='binomial',data=dplyr::select(movies, Musical, f1:f30))
+musical_model_cv = CVbinary(musical_model)
+musical_df = data.frame(list(title=movies$title, 
+                            Musical=movies$Musical, 
+                            Musical_Probability=musical_model_cv$cvhat))
+musical_df = musical_df[order(musical_df$Musical_Probability, decreasing = TRUE),]
+musical_actual_pos = sum(musical_df$Musical == 1)
+musical_predicted_pos = sum(musical_df$Musical_Probability >= 0.5)
+musical_true_pos = sum((musical_df$Musical == 1) & (musical_df$Musical_Probability >= 0.5))
+musical_precision = musical_true_pos/musical_predicted_pos
+musical_recall = musical_true_pos/musical_actual_pos
+musical_f_score = 2*musical_precision*musical_recall/(musical_precision + musical_recall)
+
+# The musical model is terrible!
+
+
+scifi_model = glm(`Sci-Fi` ~ ., family='binomial',data=dplyr::select(movies, `Sci-Fi`, f1:f30))
+scifi_model_cv = CVbinary(scifi_model)
+scifi_df = data.frame(list(title=movies$title, 
+                             SciFi=movies$`Sci-Fi`, 
+                             SciFi_Probability=scifi_model_cv$cvhat))
+scifi_df = scifi_df[order(scifi_df$SciFi_Probability, decreasing = TRUE),]
+scifi_actual_pos = sum(scifi_df$SciFi == 1)
+scifi_predicted_pos = sum(scifi_df$SciFi_Probability >= 0.5)
+scifi_true_pos = sum((scifi_df$SciFi == 1) & (scifi_df$SciFi_Probability >= 0.5))
+scifi_precision = scifi_true_pos/scifi_predicted_pos
+scifi_recall = scifi_true_pos/scifi_actual_pos
+scifi_f_score = 2*scifi_precision*scifi_recall/(scifi_precision + scifi_recall)
+
+# As was the case for comedy, the sci-fi model has good precision, but terrible recall
+
+
+
+# Read in the users data
+# Since R's read functions can't handle multi-character separators, I 
+# used emacs to change all of the "::" separators in the .dat file to 
+# tabs
+users = read.csv('../data/users.dat', sep = '\t', header = FALSE)
+
+# Rename the remaining columns appropriately, as indicated in 
+# movie-readme.txt: 
+
+colnames(users) = c('userID','gender','age','occupation','zip_code')
+
+# Filter the users by restricting users to ages 35+ and 
+# eliminating users with occupation codes 0 and 16 
+# ('other' and 'self-employed', respectively)
+
+filtered_users = users[(users$age >= 35) & 
+                         (users$occupation != 0) & 
+                         (users$occupation != 16),]
+
+# Now find the 4 most common occupations among those 
+# users and extract the rows corresponding to users in 
+# those occupations
+
+occupation_count = 
+  group_by(filtered_users, occupation) %>% 
+  summarise(n())
+colnames(occupation_count)[2] = 'count'
+occupation_count = 
+  occupation_count[(occupation_count$occupation != 0) & 
+                     (occupation_count$occupation != 16),]
+occupation_count = 
+  occupation_count[order(occupation_count$count, decreasing = TRUE),]
+# The +1 below is to account for the occupation codes starting at 0, 
+# but the occupations vector starting at 1
+most_common_occupations = (occupation_count$occupation[1:4]) + 1
+occupations = c("other or not specified",
+                "academic/educator",
+                "artist",
+                "clerical/admin",
+                "college/grad student",
+                "customer service",
+                "doctor/health care",
+                "executive/managerial",
+                "farmer",
+                "homemaker",
+                "K-12 student",
+                "lawyer",
+                "programmer",
+                "retired",
+                "sales/marketing",
+                "scientist",
+                "self-employed",
+                "technician/engineer",
+                "tradesman/craftsman",
+                "unemployed",
+                "writer")
+occupations[most_common_occupations]
+
+filtered_users = 
+  filtered_users[filtered_users$occupation %in% most_common_occupations,]
+
+# Use unregularized multinomial logistic regression to predict 
+# career in terms of the factors for each user obtained from 
+# best_svd
+
+U = data.frame(best_svd$u)
+
+# Apply the same filter to U as to the users df
+filtered_U = U[1:6041 %in% filtered_users$userID,]
+
+# Train a multinomial classification model with glmnet()
+lambda = 0
+multi_fit = glmnet(scale(filtered_U), 
+                   scale(filtered_users$occupation), 
+                   family="multinomial")
+multi_fit_coeffs = coef(multi_fit, s=lambda)
+multi_fit_preds  = data.frame(predict(multi_fit, scale(filtered_U), s=lambda))
+colnames(multi_fit_preds) = occupations[most_common_occupations]
+
+# Run PCA on the log-odds generated above
+user_pca = prcomp(multi_fit_preds, scale.=TRUE)
+
+user_pca$rotation
+
+
+
+# I'm not sure the results make sense, but screw it, I'm moving on.
+
+
+# Let's change the names of some of the genres and the associated 
+# columns in movies to make string handling a little easier
+genre_names[4]  = 'Childrens'
+genre_names[10] = 'Film_Noir'
+genre_names[15] = 'Sci_Fi'
+
+colnames(movies)[4:(length(genre_names)+3)] = genre_names
+
+# Now let's make a function which takes a movie genre name, 
+# runs unregularized logistic regression with glm to predict 
+# whether the movies are of the given genre from the factors 
+# of the movies df, multiplies the vector giving the logodds 
+# of each movie belonging to the given genre elementwise by 
+# each of the factor columns, then performs a column sum to 
+# generate scaled loadings relating genres to factors
+factor_scores = function(name, df=movies) {
+  arg1 = paste0(name,' ~ .')
+  model = glm(arg1, 
+              family='binomial', 
+              data=dplyr::select(df, contains(name), f1:f30))
+  set.seed(3); model_cv = CVbinary(model)
+  probs = model_cv$cvhat
+  logodds = log(probs/(1-probs))
+  factors = dplyr::select(df, f1:f30)
+  name_factor_scores = logodds*factors
+  return(base::colSums(name_factor_scores))
+}
+
+# Use the function from above to populate a df
+genre_scores = data.frame(lapply(genre_names, factor_scores))
+colnames(genre_scores) = genre_names
+
+# Make a dummy users df dummy_users with binarized occupation 
+# code columns with names of the form occupation_N
+dummy_users = dummy.data.frame(users, names='occupation', sep='_')
+
+# Extract the occupation columns from dummy_users and bind 
+# them to the USER factors columns we obtained earlier
+# We should make sure to eliminate the fake user
+user_factors = head(U, -1)
+colnames(user_factors) = colnames(factors)
+dummy_careers_factors = 
+  cbind(dplyr::select(dummy_users, contains('occupation')),
+        user_factors)
+
+# To obtain scores relating careers to user factors, reuse 
+# the factor_scores() function, only this time pass in the 
+# dummy_careers_factors df and the names of the occupation 
+# columns
+occ_col_names = paste0('occupation_',0:(length(occupations)-1))
+career_scores = data.frame(lapply(occ_col_names, factor_scores, 
+                                  df=dummy_careers_factors))
+colnames(career_scores) = occupations
+
+
+# Extract the eigenvalues of our best soft-SVD
+eigs = best_svd$d
+
+# Use these eigenvalues to generate a predicted career-genre 
+# pairings matrix, which we'll then transform to a df
+pairings = 
+  as.matrix(t(career_scores)) %*% as.matrix((eigs*genre_scores))
+pairings = data.frame(pairings)
+rownames(pairings) = colnames(career_scores)
+colnames(pairings) = colnames(genre_scores)
+
+corrplot(as.matrix(pairings), is.corr = FALSE)
+
+
+corrplot(biScale(as.matrix(pairings), 
+                 row.scale = FALSE, 
+                 col.scale = FALSE), 
+         is.corr = FALSE)
+
+
+
+# Now that we've gone through the mechanics of imputing a 
+# recommender system, let's use the professional-grade 
+# tool for the task: 
+# Remember, rows for users, columns for movies
+complete_ratings = 
+  complete(Incomplete(ratings_train_with_fakes$userID, 
+                      ratings_train_with_fakes$movieID),
+           best_svd)
+complete_ratings = complete_ratings[1:6040, 1:3952]
+
+
+
+# Function which will let us predict how a user with a 
+# given career will, on average, rate each movie
+ratings_by_name = function(name, 
+                           df=dummy_careers_factors, 
+                           c_ratings=complete_ratings) {
+  arg1 = paste0(name,' ~ .')
+  model = glm(arg1, 
+              family='binomial', 
+              data=dplyr::select(df, contains(name), f1:f30))
+  set.seed(3); model_cv = CVbinary(model)
+  probs = model_cv$cvhat
+  logodds = log(probs/(1-probs))
+  return(base::colSums(logodds*c_ratings)/sum(logodds))
+}
+
+# Apply this function to writers, i.e. 'occupation_20'
+writer_ratings = ratings_by_name('occupation_20')
+
+# Subtract the mean of each column of complete_ratings 
+# from writer_ratings
+writer_diff = writer_ratings - base::colMeans(complete_ratings)
+
+# Extract only the movieIDs present in the movies df
+writer_diff = 
+  writer_diff[1:length(writer_diff) %in% unique(movies$movieID)]
+
+# I'm rather surprised that the predicted average writer 
+# ratings are all higher than the overall average ratings 
+# for each movie, and that they differ by such small amounts: 
+max(writer_diff)
+min(writer_diff)
+
+# Let's find out which movies the average writer should 
+# like most and least: 
+writers_favorite_movie = 
+  movies[which.max(writer_diff),'title']
+writers_least_favorite_movie = 
+  movies[which.min(writer_diff),'title']
+
+# We were told to expect North by Northwest and Toy Story 
+# to be the writers' favorite and least favorite movies, 
+# respectively, so we're doing something right...
+
+# Function to take a career code (0 - 20), calculate the 
+# predicted average rating for that profession minus the 
+# overall mean rating for each movie, and return a df 
+# containing that difference along with the title and 
+# genres of every movie
+movies_by_career = function(career_code) {
+  name = paste0('occupation_',career_code)
+  career_ratings = 
+    ratings_by_name(name, dummy_careers_factors, complete_ratings)
+  career_diff = career_ratings - base::colMeans(complete_ratings)
+  career_diff = 
+    career_diff[1:length(career_diff) %in% unique(movies$movieID)]
+  movs_by_career = cbind(movies[,c('title','genres')], career_diff)
+  colnames(movs_by_career)[3] = paste0(occupations[career_code+1], ' diff')
+  movs_by_career = 
+    movs_by_career[order(movs_by_career[[3]], decreasing = TRUE),]
+  return(movs_by_career)
+}
+
+movies_by_writer = movies_by_career(20)
+
+movies_by_farmer = movies_by_career(8)
+
+movies_by_retired = movies_by_career(13)
+
+movies_by_college = movies_by_career(4)
+
+
+
 
 
 
