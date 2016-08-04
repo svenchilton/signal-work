@@ -1,8 +1,7 @@
 # Kurt Brown and Sven Chilton
 # Signal Data Science Cohort 3
 
-setwd('/Users/svenchilton/GitHub/signal-data-science/R-curriculum/assignments/1-r-programming/2-data-frames')
-
+setwd('~/GitHub/signal-work/rscripts')
 # Names
 vec1 = c(name1=1, name2=2, name3=3)
 names(vec1)
