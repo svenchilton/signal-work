@@ -50,6 +50,8 @@ union
 select * from one_stop_flights 
 order by price asc;
 
+-----------------------------------------------------------
+/*
 select a.item || ', ' ||
        b.item || ', ' ||
        c.item || ', ' ||
@@ -58,6 +60,8 @@ select a.item || ', ' ||
        f.item || ', ' ||
        g.item || ', ' ||
        h.item,
+*/
+select *, 
        60 - 
        (a.price + b.price + c.price + d.price + 
         e.price + f.price + g.price + h.price) 
@@ -70,9 +74,103 @@ from supermarket a
      left join supermarket f on e.price <= f.price
      left join supermarket g on f.price <= g.price
      left join supermarket h on g.price <= h.price
-where surplus >= 0;     
+--where surplus >= 0;     
+
+/*
+WITH cart(list, list_len, mod_list_len, last, budget) AS (
+  SELECT item, LENGTH(item), LENGTH(item), price, 60 - price FROM supermarket WHERE price <= 60 UNION
+  SELECT list || ", " || item, 
+         LENGTH(list),
+         CASE WHEN instr(list,item) = 1
+                THEN LENGTH(item)
+              WHEN instr(list,item) > 1
+                THEN LENGTH(substr(list,1,instr(list,item)-3) || ', ' || item)
+              ELSE LENGTH(list) END,
+         price, 
+         budget - price 
+  FROM cart, supermarket
+    WHERE price <= budget AND price >= last AND list_len <= mod_list_len
+)
+SELECT list, budget FROM cart ORDER BY budget, list;
+*/
 
 
+WITH cart(list, last, budget, sublist) AS (
+     SELECT item, price, 60 - price, item 
+     FROM supermarket 
+     WHERE price <= 60 UNION
+     SELECT list || ", " || item, 
+            price, 
+            budget - price, 
+            CASE WHEN instr(list,item) = 1 
+                      THEN substr(list,2*length(item)+5,length(list))
+                 WHEN instr(list,item) > 1
+                      THEN substr(list,1,length(list)-2*length(item)-6)
+                 ELSE list
+            END
+     FROM cart, supermarket
+     WHERE price <= budget AND 
+           price >= last AND 
+           instr(sublist,item) = 0
+)
+SELECT list, budget FROM cart ORDER BY budget, list;
+--SELECT * FROM cart;
+
+
+with cart(list, last, budget) as (
+),
+cart2()
+
+
+case when instr('cranberries, cranberries, potatoes, potatoes','potatoes') > 0 
+     then 
+
+/*
+with dummy(list, item) as (
+     select 'cranberries, pumpkin pie, pumpkin pie, pumpkin pie', 'cranberries'
+)
+select instr(list,item), 
+       case when instr(list,item) = 1
+                 then length(item) 
+            when instr(list,item) > 1
+                 then length(substr(list,1,instr(list,item)-3) || ', ' || item) 
+            else length(list)
+            end as mod_list_len,
+       length(item),
+       length(list)
+from dummy;
+*/
+
+
+with dummy(list, item) as (
+     --select 'pumpkin pie, pumpkin pie, pumpkin pie, cranberries', 'pumpkin pie'
+     select 'potatoes, potatoes, potatoes, turkey', 'turkey'
+), 
+dummy2(list, item, instr_ind, sub_list) as (
+     select list, item, instr(list,item),
+            case when instr(list,item) = 1 
+                 then substr(list,2*length(item)+5,length(list))
+            when instr(list,item) > 1 
+                 then substr(list,1,length(list)-2*length(item)-6)
+            else list
+            end
+     from dummy
+)
+select *, instr(sub_list,item)
+from dummy2;
+
+with dummy(list, item) as (
+     --select 'pumpkin pie, pumpkin pie, pumpkin pie, cranberries', 'pumpkin pie'
+     select 'potatoes, potatoes, potatoes, turkey', 'turkey'
+) 
+select instr(list,item) from dummy;
+
+
+
+
+
+
+-----------------------------------------------------------
 
 select '';
 select 'There are '||count(distinct meat)||' types of meat in the main_course table.'
